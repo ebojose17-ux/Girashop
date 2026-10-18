@@ -1391,12 +1391,13 @@ const SUPPORT_CATS = ['Problema com um pedido', 'Problema com um vendedor ou com
 let msgUnsub = null;
 const inChat = () => S.view === 'chats' && !!S.chatId;
 const otherOf = (c) => (c.buyerUid === myId() ? { uid: c.sellerId, name: c.sellerName || 'Vendedor' } : { uid: c.buyerUid, name: c.buyerName || 'Comprador' });
+const chatClosed = (c) => { const t = (c.closed || {})[myId()]; return !!t && String(t) >= String(c.lastAt || ''); };
 const chatUnread = (c) => !!(c.lastFrom && c.lastFrom !== myId() && String(c.lastAt || '') > String((c.reads || {})[myId()] || ''));
 const fmtTime = (d) => { const t = new Date(d); return isNaN(t) ? '' : t.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' }); };
 const fmtDay = (d) => { const t = new Date(d); if (isNaN(t)) return ''; return t.toDateString() === new Date().toDateString() ? 'Hoje' : t.toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' }); };
 const validEmail = (e) => /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/.test(e || '');
 function updateChatDot() {
-  const n = S.chats.filter(chatUnread).length;
+  const n = S.chats.filter((c) => chatUnread(c) && !chatClosed(c)).length;
   document.querySelectorAll('.chatdot').forEach((d) => { d.textContent = n > 9 ? '9+' : n; d.hidden = !n; });
 }
 function stopMsgs() { if (msgUnsub) { msgUnsub(); msgUnsub = null; } S.msgs = []; }
@@ -1452,7 +1453,7 @@ function conversationView() {
   const canCancel = !!(ord && ord.status === 'aceite');
   return '<div class="chatscreen"><div class="chat-top"><button class="iconbtn" data-act="chat-back" aria-label="Voltar">' + ico('back', 22) + '</button>'
     + '<div class="ct-t"><strong>' + esc(o.name) + '</strong><small>' + esc(c.productName || '') + '</small></div>'
-    + (canCancel ? '<button class="btn sm danger" data-act="chat-cancel">Cancelar pedido</button>' : '')
+    + (canCancel ? '<button class="btn sm danger" data-act="chat-cancel">Cancelar pedido</button>' : '<button class="btn sm" data-act="chat-close">Fechar conversa</button>')
     + '<button class="iconbtn" data-act="report-chat" aria-label="Denunciar conversa">' + ico('flag', 20) + '</button></div>'
     + '<div class="chat-msgs" id="cmsgs" aria-live="polite"></div>'
     + '<div class="chat-bar"><textarea id="cin" rows="1" maxlength="1000" placeholder="Escreve uma mensagem" aria-label="Mensagem"></textarea><button class="btn primary" data-act="chat-send" aria-label="Enviar">' + ico('send', 20) + '</button></div></div>';
@@ -1481,7 +1482,7 @@ function chatsView() {
   const allMine = S.myOrders.filter((o) => !hid.has(o.id)).sort(byDateDesc);
   const mine = allMine.filter((o) => !isDone(o));
   const mineH = allMine.filter(isDone);
-  const chats = S.chats.slice().sort((a, b) => String(b.lastAt || b.createdAt || '').localeCompare(String(a.lastAt || a.createdAt || '')));
+  const chats = S.chats.filter((c) => !chatClosed(c)).sort((a, b) => String(b.lastAt || b.createdAt || '').localeCompare(String(a.lastAt || a.createdAt || '')));
   return header(authButtons() + cartBtn()) + subbar('Pedidos e conversas')
     + '<main class="wrap"><div class="clist">'
     + (toAnswer ? '<div class="note">' + ICON.info + '<span>Tens <strong>' + toAnswer + '</strong> pedido' + (toAnswer > 1 ? 's' : '') + ' para responder.</span><button class="btn sm primary" data-act="go-orders">Ver pedidos</button></div>' + S.orders.filter((o) => o.status === 'novo' && o.sellerId === me).sort(byDateDesc).map(incomingCard).join('') : '')
@@ -1979,6 +1980,11 @@ Object.assign(ACT, {
   'confirm-decline': async (b, id) => { await updateDoc(doc(db, 'orders', id), { status: 'recusado', declinedAt: new Date().toISOString() }); closeDlg(); toast('Pedido recusado'); },
   'my-cancel': (b, id) => ask('Cancelar o pedido?', 'O vendedor ainda não respondeu. Podes cancelar sem problema.', 'confirm-my-cancel', id, 'Cancelar pedido'),
   'confirm-my-cancel': async (b, id) => { await updateDoc(doc(db, 'orders', id), { status: 'cancelado', cancelledAt: new Date().toISOString() }); closeDlg(); toast('Pedido cancelado'); },
+  'chat-close': () => ask('Fechar esta conversa?', 'Sai da tua lista de conversas. Se a outra pessoa escrever outra vez, volta a aparecer.', 'confirm-chat-close', S.chatId, 'Fechar conversa'),
+  'confirm-chat-close': async (b, id) => {
+    await updateDoc(doc(db, 'chats', id), { ['closed.' + myId()]: new Date().toISOString() });
+    stopMsgs(); S.chatId = null; closeDlg(); toast('Conversa fechada'); render();
+  },
   'chat-cancel': () => ask('Cancelar este pedido?', 'O pedido fica cancelado e a outra pessoa é avisada no chat. Não pode ser desfeito.', 'confirm-chat-cancel', S.chatId, 'Cancelar pedido'),
   'confirm-chat-cancel': async (b, id) => { const ok = await cancelFromChat(id); closeDlg(); if (ok) toast('Pedido cancelado'); },
   'go-orders': () => { S.tab = 'pedidos'; go('sell'); }
