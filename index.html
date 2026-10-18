@@ -395,6 +395,10 @@ dialog::backdrop{animation:fade .2s}
 .oitems{display:grid;gap:4px}
 .oitems div{display:flex;justify-content:space-between;gap:10px}
 .h2{font-size:1.4rem}
+.hist{display:grid;gap:10px;margin-top:8px;padding-top:12px;border-top:1px dashed var(--line)}
+.hist-h{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.hist-b{display:grid;gap:10px}
+.hist-b .ocard,.hist-b .review{opacity:.92}
 .bnav{display:none}
 @media (max-width:819px){
   .hide-m{display:none!important}
@@ -611,7 +615,7 @@ function saveCart() {
 const S = {
   view: 'gate', cat: 'all', q: '', tab: 'produtos', pinOk: false, editSeller: false, cartView: 'list',
   products: [], orders: [], sellers: {}, users: {}, seller: null, cart: loadCart(), draft: blankDraft(), lastOrder: null, ready: false, banned: false, authReady: false, busy: false, placing: false, sending: false, err: {}, adminTab: 'produtos',
-  chats: [], myOrders: [], lastOrders: [], msgs: [], chatId: null, reports: [], tickets: [], reportCtx: null, uid: null, lastReport: 0
+  chats: [], myOrders: [], lastOrders: [], msgs: [], chatId: null, reports: [], tickets: [], reportCtx: null, uid: null, lastReport: 0, hopen: {}, hlim: {}, shown: 12, gk: ''
 };
 
 let tt;
@@ -934,13 +938,16 @@ function paintGrid() {
     if (!q) return true;
     return (p.name + ' ' + p.desc + ' ' + p.course + ' ' + (CAT[p.cat] ? CAT[p.cat].name : '')).toLowerCase().indexOf(q) > -1;
   });
+  const gk = S.cat + '|' + q;
+  if (S.gk !== gk) { S.gk = gk; S.shown = 12; }
+  const lim = S.shown || 12;
   const countEl = $('#count');
   const gridEl = $('#grid');
   if (!countEl || !gridEl) return;
   if (!S.ready) { countEl.textContent = 'A carregar…'; gridEl.innerHTML = '<div class="sk"></div>'.repeat(6); return; }
   countEl.textContent = list.length + (list.length === 1 ? ' produto aprovado' : ' produtos aprovados');
   gridEl.innerHTML = list.length
-    ? list.map((p) => cardHtml(p)).join('')
+    ? list.slice(0, lim).map((p) => cardHtml(p)).join('') + (list.length > lim ? '<button class="btn block" style="grid-column:1/-1" data-act="grid-more">Mostrar mais (' + (list.length - lim) + ')</button>' : '')
     : '<div class="empty"><strong>Nada encontrado</strong><span>' + (S.ready ? 'Ainda não há produtos aprovados. Seja o primeiro a vender!' : 'A carregar…') + '</span><button class="btn sm" data-act="clear">Limpar filtros</button></div>';
 }
 function openDlg(h) {
@@ -1142,6 +1149,21 @@ function sellView() {
     + tabs.map((t) => '<button class="tab" role="tab" data-act="tab" data-t="' + t[0] + '" aria-selected="' + (S.tab === t[0]) + '">' + t[1] + '</button>').join('')
     + '</nav><section>' + ({ balanco: tabBalanco, produtos: tabProdutos, publicar: tabPublicar, pedidos: tabPedidos, pagamentos: tabPagamentos, verif: tabVerif }[S.tab] || tabProdutos)() + '</section></main>' + footer();
 }
+
+/* ---------- histórico: esconder / apagar para não poluir ---------- */
+const isDone = (o) => o.status === 'entregue' || o.status === 'recusado' || o.status === 'cancelado';
+function hiddenKey() { return 'gs_hid_' + (myId() || 'x'); }
+function hiddenSet() { try { return new Set(JSON.parse(localStorage.getItem(hiddenKey()) || '[]')); } catch (e) { return new Set(); } }
+function hideIds(ids) { const h = hiddenSet(); ids.forEach((i) => h.add(i)); try { localStorage.setItem(hiddenKey(), JSON.stringify(Array.from(h).slice(-500))); } catch (e) { /* sem armazenamento */ } }
+async function delMany(col, ids) { for (let i = 0; i < ids.length; i += 400) { const b = writeBatch(db); ids.slice(i, i + 400).forEach((x) => b.delete(doc(db, col, x))); await b.commit(); } }
+function histSec(k, title, list, fn, clearAct, clearTxt, hint) {
+  if (!list.length) return '';
+  const o = !!S.hopen[k], lim = S.hlim[k] || 6;
+  return '<div class="hist"><div class="hist-h"><button class="btn sm ghost" data-act="hist-toggle" data-id="' + k + '" aria-expanded="' + o + '">' + (o ? '▾ ' : '▸ ') + title + ' (' + list.length + ')</button>'
+    + (clearAct ? '<button class="btn sm danger" data-act="' + clearAct + '">' + clearTxt + '</button>' : '') + '</div>'
+    + (o ? '<div class="hist-b">' + (hint ? '<p class="hint">' + hint + '</p>' : '') + list.slice(0, lim).map((x) => fn(x)).join('')
+      + (list.length > lim ? '<button class="btn sm block" data-act="hist-more" data-id="' + k + '">Mostrar mais (' + (list.length - lim) + ')</button>' : '') + '</div>' : '') + '</div>';
+}
 function sellerOrders() {
   const mid = myId();
   return S.orders.filter((o) => mid && o.items && o.items.some((i) => i.sellerId === mid));
@@ -1167,11 +1189,11 @@ function tabBalanco() {
     + '</div>'
     + '<div class="note">' + ICON.info + '<span>O GiraShop <strong>não processa dinheiro</strong>. O pagamento é entre ti e o comprador. Este painel só resume os teus pedidos.</span></div>'
     + (os.length
-      ? '<h3 style="font-size:1.1rem;margin-top:8px">Histórico</h3><div class="rows">' + os.map((o) => {
+      ? '<h3 style="font-size:1.1rem;margin-top:8px">Histórico</h3><div class="rows">' + os.slice(0, S.hopen.bal ? 999 : 5).map((o) => {
         const its = (o.items || []).filter((i) => i.sellerId === myId());
         const tot = sellerOrderTotal(o);
         return '<div class="row" style="grid-template-columns:minmax(0,1fr) auto"><div style="min-width:0"><div class="meta"><strong class="num" style="color:var(--ink)">' + esc(o.code || o.id) + '</strong>' + orderPill(o.status) + '</div><div>' + its.map((i) => i.qty + ' × ' + esc(i.name)).join(', ') + '</div><div class="hint">' + esc(o.buyer && o.buyer.name) + ' · ' + esc(o.pay || '') + '</div></div><div class="price num">' + kz(tot) + '</div></div>';
-      }).join('') + '</div>'
+      }).join('') + '</div>' + (os.length > 5 ? '<button class="btn sm block" data-act="hist-toggle" data-id="bal">' + (S.hopen.bal ? 'Mostrar menos' : 'Ver todos (' + os.length + ')') + '</button>' : '')
       : '<div class="empty"><strong>Ainda sem vendas</strong><span>Quando houver pedidos dos teus produtos, o balanço aparece aqui.</span></div>')
     + '</div>';
 }
@@ -1227,7 +1249,10 @@ function tabPublicar() {
 function tabPedidos() {
   const mid = myId();
   const rank = { novo: 0, aceite: 1 };
-  const os = sellerOrders().sort((a, b) => (rank[a.status] != null ? rank[a.status] : 2) - (rank[b.status] != null ? rank[b.status] : 2) || byDateDesc(a, b));
+  const hid = hiddenSet();
+  const all = sellerOrders().filter((o) => !hid.has(o.id)).sort((a, b) => (rank[a.status] != null ? rank[a.status] : 2) - (rank[b.status] != null ? rank[b.status] : 2) || byDateDesc(a, b));
+  const os = all.filter((o) => !isDone(o));
+  const hs = all.filter(isDone);
   const card = (o) => {
     const b = o.buyer || {};
     const its = o.items.filter((i) => i.sellerId === mid);
@@ -1243,7 +1268,8 @@ function tabPedidos() {
   };
   return '<div class="panel"><h2>Pedidos</h2><div class="note">' + ICON.info + '<span>Quando aceitas um pedido, o stock desce e abre-se um chat com o comprador.</span></div>'
     + (os.length ? '<div class="ocards">' + os.map(card).join('') + '</div>'
-      : '<div class="empty"><strong>Sem pedidos por agora</strong><span>Quando um colega pedir um produto teu, aparece aqui para aceitares ou recusares.</span></div>') + '</div>';
+      : hs.length ? '<p class="hint">Sem pedidos por responder.</p>' : '<div class="empty"><strong>Sem pedidos por agora</strong><span>Quando um colega pedir um produto teu, aparece aqui para aceitares ou recusares.</span></div>')
+    + histSec('sh', 'Histórico', hs, card, 'clear-sell-hist', 'Limpar histórico', 'Pedidos já terminados. Limpar remove só da tua lista; os totais do Balanço não mudam.') + '</div>';
 }
 function tabVerif() {
   const sv = S.seller;
@@ -1414,15 +1440,19 @@ function chatsView() {
   if (S.chatId) return conversationView();
   const me = myId();
   const toAnswer = S.orders.filter((o) => o.status === 'novo' && o.sellerId === me).length;
-  const mine = S.myOrders.slice().sort(byDateDesc);
+  const hid = hiddenSet();
+  const allMine = S.myOrders.filter((o) => !hid.has(o.id)).sort(byDateDesc);
+  const mine = allMine.filter((o) => !isDone(o));
+  const mineH = allMine.filter(isDone);
   const chats = S.chats.slice().sort((a, b) => String(b.lastAt || b.createdAt || '').localeCompare(String(a.lastAt || a.createdAt || '')));
   return header(authButtons() + cartBtn()) + subbar('Pedidos e conversas')
     + '<main class="wrap"><div class="clist">'
     + (toAnswer ? '<div class="note">' + ICON.info + '<span>Tens <strong>' + toAnswer + '</strong> pedido' + (toAnswer > 1 ? 's' : '') + ' para responder.</span><button class="btn sm primary" data-act="go-orders">Ver pedidos</button></div>' : '')
     + '<h2 class="h2">Os meus pedidos</h2>'
-    + (mine.length ? mine.map(myOrderCard).join('') : '<div class="empty"><strong>Ainda sem pedidos</strong><span>Escolhe um produto, faz o pedido e espera pela resposta do vendedor.</span><button class="btn primary sm" data-act="role-buy">Ir para a loja</button></div>')
+    + (mine.length ? mine.map(myOrderCard).join('') : mineH.length ? '<p class="hint">Sem pedidos em curso.</p>' : '<div class="empty"><strong>Ainda sem pedidos</strong><span>Escolhe um produto, faz o pedido e espera pela resposta do vendedor.</span><button class="btn primary sm" data-act="role-buy">Ir para a loja</button></div>')
+    + histSec('myh', 'Histórico de pedidos', mineH, myOrderCard, 'clear-my-hist', 'Limpar histórico', 'Pedidos já terminados. Limpar remove só da tua lista.')
     + '<h2 class="h2">Conversas</h2>'
-    + (chats.length ? chats.map(chatRow).join('') : '<div class="empty"><strong>Sem conversas</strong><span>O chat abre quando um vendedor aceita o teu pedido.</span></div>')
+    + (chats.length ? chats.slice(0, S.hlim.chats || 6).map(chatRow).join('') + (chats.length > (S.hlim.chats || 6) ? '<button class="btn sm block" data-act="hist-more" data-id="chats">Mostrar mais (' + (chats.length - (S.hlim.chats || 6)) + ')</button>' : '') : '<div class="empty"><strong>Sem conversas</strong><span>O chat abre quando um vendedor aceita o teu pedido.</span></div>')
     + '</div></main>' + footer();
 }
 function paintChat() {
@@ -1536,8 +1566,10 @@ function reportCard(r) {
 }
 function adminReports() {
   const note = S.err.reports ? '<div class="note">' + ICON.info + '<span>Não consegui ler as denúncias (' + esc(S.err.reports) + '). Publica as regras novas do ficheiro firestore.rules.</span></div>' : '';
-  const list = S.reports.slice().sort((a, b) => (a.status === 'aberta' ? 0 : 1) - (b.status === 'aberta' ? 0 : 1) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
-  return note + '<h2 class="h2">Denúncias</h2>' + (list.length ? list.map(reportCard).join('') : '<div class="empty"><strong>Sem denúncias</strong><span>As denúncias de compradores e vendedores aparecem aqui.</span></div>');
+  const all = S.reports.slice().sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  const op = all.filter((r) => r.status === 'aberta'), cl = all.filter((r) => r.status !== 'aberta');
+  return note + '<h2 class="h2">Denúncias</h2>' + (op.length ? op.map(reportCard).join('') : cl.length ? '<p class="hint">Sem denúncias abertas.</p>' : '<div class="empty"><strong>Sem denúncias</strong><span>As denúncias de compradores e vendedores aparecem aqui.</span></div>')
+    + histSec('rph', 'Resolvidas', cl, reportCard, 'clear-adm-reports', 'Apagar resolvidas');
 }
 function ticketCard(t) {
   const novo = t.status === 'novo';
@@ -1548,8 +1580,10 @@ function ticketCard(t) {
 }
 function adminSupport() {
   const note = S.err.support ? '<div class="note">' + ICON.info + '<span>Não consegui ler o suporte (' + esc(S.err.support) + '). Publica as regras novas do ficheiro firestore.rules.</span></div>' : '';
-  const list = S.tickets.slice().sort((a, b) => (a.status === 'novo' ? 0 : 1) - (b.status === 'novo' ? 0 : 1) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
-  return note + '<h2 class="h2">Pedidos de suporte</h2>' + (list.length ? list.map(ticketCard).join('') : '<div class="empty"><strong>Sem pedidos</strong><span>Os pedidos de ajuda enviados pelo site aparecem aqui.</span></div>');
+  const all = S.tickets.slice().sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  const nw = all.filter((t) => t.status === 'novo'), dn = all.filter((t) => t.status !== 'novo');
+  return note + '<h2 class="h2">Pedidos de suporte</h2>' + (nw.length ? nw.map(ticketCard).join('') : dn.length ? '<p class="hint">Sem pedidos novos.</p>' : '<div class="empty"><strong>Sem pedidos</strong><span>Os pedidos de ajuda enviados pelo site aparecem aqui.</span></div>')
+    + histSec('tkh', 'Tratados', dn, ticketCard, 'clear-adm-tickets', 'Apagar tratados');
 }
 
 /* ---------- administração ---------- */
@@ -1591,7 +1625,7 @@ function adminView() {
 function adminProducts(pend, done) {
   return '<h2 class="h2">Para analisar</h2>'
     + (pend.length ? pend.map(reviewCard).join('') : '<div class="empty"><strong>Nada à espera</strong><span>Quando um vendedor enviar um produto, aparece aqui com as provas.</span></div>')
-    + (done.length ? '<h2 class="h2">Já decididos</h2><div class="rows">' + done.map((p) => '<div class="row"><div class="thumb">' + thumb(p) + '</div><div style="min-width:0"><div class="cname">' + esc(p.name) + '</div><div style="margin-top:4px">' + statusPill(p.status) + '</div>' + (p.note ? '<p class="hint">' + esc(p.note) + '</p>' : '') + '</div><div class="acts"><button class="btn sm" data-act="reopen" data-id="' + p.id + '">Reabrir</button></div></div>').join('') + '</div>' : '');
+    + histSec('prh', 'Já decididos', done, (p) => '<div class="row"><div class="thumb">' + thumb(p) + '</div><div style="min-width:0"><div class="cname">' + esc(p.name) + '</div><div style="margin-top:4px">' + statusPill(p.status) + '</div>' + (p.note ? '<p class="hint">' + esc(p.note) + '</p>' : '') + '</div><div class="acts"><button class="btn sm" data-act="reopen" data-id="' + p.id + '">Reabrir</button></div></div>');
 }
 function svPill(st) {
   return { verificado: '<span class="pill ok">' + ICON.check + 'Verificado</span>', bloqueado: '<span class="pill bad">Bloqueado</span>', recusado: '<span class="pill bad">Recusado</span>' }[st] || '<span class="pill warn">Em análise</span>';
@@ -1615,12 +1649,11 @@ function sellerCard(id, a) {
 }
 function adminSellers() {
   const note = S.err.sellers ? '<div class="note">' + ICON.info + '<span>Não consegui ler os vendedores (' + esc(S.err.sellers) + '). Confirma as regras do Firestore para a conta de administração.</span></div>' : '';
-  const rank = { pendente: 0, recusado: 1, verificado: 2, bloqueado: 3 };
-  const rk = (a) => { const r = rank[a.status || 'pendente']; return r === undefined ? 9 : r; };
-  const list = Object.keys(S.sellers).map((id) => ({ id, a: S.sellers[id] }))
-    .sort((x, y) => rk(x.a) - rk(y.a) || String(y.a.updatedAt || '').localeCompare(String(x.a.updatedAt || '')));
+  const all = Object.keys(S.sellers).map((id) => ({ id, a: S.sellers[id] })).sort((x, y) => String(y.a.updatedAt || '').localeCompare(String(x.a.updatedAt || '')));
+  const pend = all.filter((x) => (x.a.status || 'pendente') === 'pendente'), hs = all.filter((x) => (x.a.status || 'pendente') !== 'pendente');
   return note + '<h2 class="h2">Verificação de vendedores</h2>'
-    + (list.length ? list.map((x) => sellerCard(x.id, x.a)).join('') : '<div class="empty"><strong>Ainda sem vendedores</strong><span>Quando um aluno enviar a verificação, aparece aqui com a selfie e os dados.</span></div>');
+    + (pend.length ? pend.map((x) => sellerCard(x.id, x.a)).join('') : hs.length ? '<p class="hint">Sem verificações por analisar.</p>' : '<div class="empty"><strong>Ainda sem vendedores</strong><span>Quando um aluno enviar a verificação, aparece aqui com a selfie e os dados.</span></div>')
+    + histSec('ash', 'Já decididos', hs, (x) => sellerCard(x.id, x.a), 'clear-adm-sellers', 'Apagar recusados', 'Verificados, recusados e bloqueados. «Apagar recusados» elimina só as verificações recusadas.');
 }
 async function decideSeller(id, kind) {
   const sv = S.sellers[id];
@@ -1665,15 +1698,17 @@ function orderCard(o) {
 function adminOrders() {
   const note = S.err.orders ? '<div class="note">' + ICON.info + '<span>Não consegui ler os pedidos (' + esc(S.err.orders) + '). Confirma as regras do Firestore para a conta de administração.</span></div>' : '';
   const list = S.orders.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-  return note + (list.length ? list.map(orderCard).join('') : '<div class="empty"><strong>Sem pedidos</strong><span>Quando um colega comprar, o pedido aparece aqui para análise.</span></div>');
+  const act = list.filter((o) => !isDone(o)), hs = list.filter(isDone);
+  return note + '<h2 class="h2">Pedidos</h2>' + (act.length ? act.map(orderCard).join('') : hs.length ? '<p class="hint">Sem pedidos por tratar.</p>' : '<div class="empty"><strong>Sem pedidos</strong><span>Quando um colega comprar, o pedido aparece aqui para análise.</span></div>')
+    + histSec('aoh', 'Histórico', hs, orderCard, 'clear-adm-orders', 'Apagar histórico', 'Entregues, recusados e cancelados. «Apagar histórico» elimina-os de vez.');
 }
 function adminUsers(users) {
   if (!users.length) return '<div class="empty"><strong>Ainda sem utilizadores</strong><span>Quando alguém entrar com Google, aparece aqui.</span></div>';
-  return '<div class="rows">' + users.map((u) => {
+  return '<div class="rows">' + users.slice(0, S.hlim.users || 12).map((u) => {
     const ban = u.status === 'banned';
     return '<div class="row" style="grid-template-columns:minmax(0,1fr) auto"><div style="min-width:0"><div class="cname">' + esc(u.name || 'Sem nome') + '</div><div class="hint" style="overflow-wrap:anywhere">' + esc(u.email || '') + '</div><div style="margin-top:4px">' + (ban ? '<span class="pill bad">Suspenso</span>' : '<span class="pill ok">Ativo</span>') + (u.banReason ? '<span class="hint"> · ' + esc(u.banReason) + '</span>' : '') + '</div></div><div class="acts">'
       + (ban ? '<button class="btn sm primary" data-act="unban-user" data-id="' + u.id + '">Reativar</button>' : '<button class="btn sm danger" data-act="ban-user" data-id="' + u.id + '">Suspender</button>') + '</div></div>';
-  }).join('') + '</div>';
+  }).join('') + '</div>' + (users.length > (S.hlim.users || 12) ? '<button class="btn sm block" data-act="hist-more" data-id="users">Mostrar mais (' + (users.length - (S.hlim.users || 12)) + ')</button>' : '');
 }
 async function cancelOrder(id) {
   const o = S.orders.find((x) => x.id === id);
@@ -1911,6 +1946,25 @@ Object.assign(ACT, {
 });
 ['approve', 'more', 'reject', 'block'].forEach((k) => { ACT[k] = (b, id) => decide(id, k); });
 ['ok', 'no', 'block', 'unblock'].forEach((k) => { ACT['seller-' + k] = (b, id) => decideSeller(id, k); });
+
+
+const CLEAR = {
+  'sell-hist': ['Limpar histórico?', 'Os pedidos já terminados saem só da tua lista. Comprador e administração mantêm o registo.', async () => hideIds(sellerOrders().filter(isDone).map((o) => o.id))],
+  'my-hist': ['Limpar histórico?', 'Os pedidos já terminados saem só da tua lista. O vendedor e a administração mantêm o registo.', async () => hideIds(S.myOrders.filter(isDone).map((o) => o.id))],
+  'adm-orders': ['Apagar histórico de pedidos?', 'Apaga de vez os pedidos entregues, recusados e cancelados. Não pode ser desfeito.', () => delMany('orders', S.orders.filter(isDone).map((o) => o.id))],
+  'adm-sellers': ['Apagar verificações recusadas?', 'Apaga de vez as verificações recusadas. O aluno pode enviar outra. Não pode ser desfeito.', () => delMany('sellers', Object.keys(S.sellers).filter((k) => S.sellers[k].status === 'recusado'))],
+  'adm-reports': ['Apagar denúncias resolvidas?', 'Apaga de vez as denúncias já resolvidas. Não pode ser desfeito.', () => delMany('reports', S.reports.filter((r) => r.status !== 'aberta').map((r) => r.id))],
+  'adm-tickets': ['Apagar pedidos tratados?', 'Apaga de vez os pedidos de suporte já tratados. Não pode ser desfeito.', () => delMany('support', S.tickets.filter((t) => t.status !== 'novo').map((t) => t.id))]
+};
+Object.keys(CLEAR).forEach((k) => {
+  ACT['clear-' + k] = () => ask(CLEAR[k][0], CLEAR[k][1], 'do-clear-' + k, '', 'Apagar');
+  ACT['do-clear-' + k] = async () => { await CLEAR[k][2](); closeDlg(); toast('Histórico limpo'); render(); };
+});
+Object.assign(ACT, {
+  'hist-toggle': (b, id) => { S.hopen[id] = !S.hopen[id]; render(); },
+  'hist-more': (b, id) => { S.hlim[id] = (S.hlim[id] || (id === 'users' ? 12 : 6)) + 6; render(); },
+  'grid-more': () => { S.shown = (S.shown || 12) + 12; paintGrid(); }
+});
 
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-act]');
