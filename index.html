@@ -586,7 +586,8 @@ const P = {
   flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
   send: '<path d="m4 12 16-8-6 16-2-7z"/>',
   back: '<path d="m15 5-7 7 7 7"/>',
-  help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7M12 17h.01"/>'
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7M12 17h.01"/>',
+  box: '<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>'
 };
 function ico(n, s, w) {
   s = s || 20;
@@ -610,7 +611,7 @@ function saveCart() {
 const S = {
   view: 'gate', cat: 'all', q: '', tab: 'produtos', pinOk: false, editSeller: false, cartView: 'list',
   products: [], orders: [], sellers: {}, users: {}, seller: null, cart: loadCart(), draft: blankDraft(), lastOrder: null, ready: false, banned: false, authReady: false, busy: false, placing: false, sending: false, err: {}, adminTab: 'produtos',
-  chats: [], msgs: [], chatId: null, reports: [], tickets: [], reportCtx: null, uid: null, lastReport: 0
+  chats: [], myOrders: [], lastOrders: [], msgs: [], chatId: null, reports: [], tickets: [], reportCtx: null, uid: null, lastReport: 0
 };
 
 let tt;
@@ -705,7 +706,7 @@ function bnav() {
     + '<button class="bn" data-act="go-gate"' + on('gate') + '>' + ico('home', 24) + 'Início</button>'
     + '<button class="bn" data-act="role-buy"' + on('buy') + '>' + ico('store', 24) + 'Loja</button>'
     + '<button class="bn" data-act="role-sell"' + on('sell') + '>' + ico('plus', 24) + 'Vender</button>'
-    + '<button class="bn" data-act="nav-chat"' + on('chats') + '>' + ico('chat', 24) + 'Chat<i class="chatdot" hidden>0</i></button>'
+    + '<button class="bn" data-act="nav-chat"' + on('chats') + '>' + ico('box', 24) + 'Pedidos<i class="chatdot" hidden>0</i></button>'
     + '<button class="bn" data-act="nav-account">' + ico('user', 24) + (isLoggedIn() ? 'Conta' : 'Entrar') + '</button></nav>';
 }
 function fab() {
@@ -773,7 +774,7 @@ let unsubs = [];
 function stopListeners() {
   unsubs.forEach((f) => f());
   unsubs = [];
-  Object.assign(S, { products: [], orders: [], sellers: {}, users: {}, chats: [], reports: [], tickets: [], ready: false, err: {} });
+  Object.assign(S, { products: [], orders: [], sellers: {}, users: {}, chats: [], myOrders: [], reports: [], tickets: [], ready: false, err: {} });
   stopMsgs();
   S.chatId = null;
 }
@@ -802,6 +803,7 @@ function startListeners() {
     if (b !== S.banned) { S.banned = b; softRender(); }
   }, 'me');
   on(query(collection(db, 'chats'), where('members', 'array-contains', uid)), (snap) => { S.chats = mapDocs(snap, (c) => c); chatsChanged(); }, 'chats');
+  on(query(collection(db, 'orders'), where('buyerUid', '==', uid)), (snap) => { S.myOrders = mapDocs(snap, normOrder); chatsChanged(); }, 'myorders');
   if (admin) {
     on(collection(db, 'orders'), (snap) => { S.orders = mapDocs(snap, normOrder); refresh(); }, 'orders');
     on(collection(db, 'sellers'), (snap) => {
@@ -964,7 +966,7 @@ function openProduct(id) {
     + '<p>' + esc(p.desc) + '</p>'
     + '<div class="sellerbox"><span class="avatar">' + esc((p.seller || '?').charAt(0)) + '</span><div><strong>' + esc(p.seller) + '</strong><div class="meta">' + esc(p.course) + '</div></div><span class="pill ok" style="margin-left:auto">' + ICON.check + 'Verificado</span></div>'
     + (p.sellerId === myId() ? '<div class="note">' + ICON.info + '<span>Este produto é teu.</span></div>'
-      : '<div class="pdual"><button class="btn" data-act="chat-start" data-id="' + p.id + '">' + ico('chat', 18) + 'Falar com o vendedor</button><button class="btn ghost" data-act="report-product" data-id="' + p.id + '">' + ico('flag', 18) + 'Denunciar</button></div>')
+      : '<div class="note">' + ICON.info + '<span>Faz o pedido: o vendedor recebe os teus dados e, se aceitar, abre-se um chat para combinarem a entrega.</span></div><button class="btn ghost block" data-act="report-product" data-id="' + p.id + '">' + ico('flag', 18) + 'Denunciar anúncio</button>')
     + '<button class="btn primary lg block sticky-cta" data-act="add" data-id="' + p.id + '">Adicionar ao carrinho</button></div>');
 }
 function addCart(id) {
@@ -992,9 +994,12 @@ function cartTotal() {
 function cartDlg() {
   const lines = cartLines();
   const X = '<button class="x" data-act="close" aria-label="Fechar">×</button>';
-  if (S.cartView === 'done' && S.lastOrder) {
-    const o = S.lastOrder;
-    openDlg('<div class="dlg-in">' + X + '<span class="pill ok" style="justify-self:start">' + ICON.check + 'Pedido enviado</span><h2 style="font-size:1.6rem">Pedido <span class="num">' + esc(o.code || o.id) + '</span></h2><p>O vendedor vai contactar-te para o número <strong class="num">' + esc(o.buyer.phone) + '</strong> para combinar a recolha na escola.</p><dl class="dl"><dt>Total</dt><dd class="num">' + kz(o.total) + '</dd><dt>Pagamento</dt><dd>' + esc(o.pay) + '</dd></dl><p class="hint">O pagamento é combinado diretamente com o vendedor.</p><button class="btn primary lg block" data-act="close">Voltar à loja</button></div>');
+  if (S.cartView === 'done' && S.lastOrders.length) {
+    openDlg('<div class="dlg-in">' + X + '<span class="pill ok" style="justify-self:start">' + ICON.check + 'Pedido enviado</span><h2 style="font-size:1.6rem">Aguarda a resposta</h2>'
+      + '<p>O vendedor recebeu os teus dados. Se aceitar, abre-se um chat para combinarem a entrega na escola.</p>'
+      + '<div class="rows">' + S.lastOrders.map((o) => '<div class="row" style="grid-template-columns:minmax(0,1fr) auto"><div><strong class="num">' + esc(o.code) + '</strong><div class="hint">Vendedor: ' + esc(o.sellerName) + '</div></div><span class="price num">' + kz(o.total) + '</span></div>').join('') + '</div>'
+      + '<p class="hint">O pagamento é combinado diretamente com o vendedor.</p>'
+      + '<button class="btn primary lg block" data-act="nav-chat">Ver os meus pedidos</button><button class="btn ghost block" data-act="close">Voltar à loja</button></div>');
     return;
   }
   if (!lines.length) {
@@ -1011,8 +1016,9 @@ function cartDlg() {
       + '<option>Transferência bancária (o vendedor envia IBAN)</option>'
       + '</select></div>'
       + '<div class="note">' + ICON.info + '<span>A entrega é na escola. O site não processa cartões nem PayPal — combinas o pagamento diretamente com o vendedor (Multicaixa Express, transferência ou dinheiro).</span></div>'
+      + '<div class="note">' + ICON.info + '<span>O vendedor recebe o teu nome, turma e telemóvel. Se aceitar, abre-se um chat para combinarem a entrega.</span></div>'
       + '<div class="total"><span>Total</span><span class="price">' + kz(cartTotal()) + '</span></div><div class="err" id="b-err" role="alert"></div>'
-      + '<button class="btn primary lg block" data-act="place">Enviar pedido</button><button class="btn ghost block" data-act="to-list">Voltar ao carrinho</button></div></div>');
+      + '<button class="btn primary lg block" data-act="place">Enviar pedido ao vendedor</button><button class="btn ghost block" data-act="to-list">Voltar ao carrinho</button></div></div>');
     return;
   }
   openDlg('<div class="dlg-in">' + X + '<h2 style="font-size:1.5rem">Carrinho</h2><div class="lines">'
@@ -1025,49 +1031,79 @@ async function placeOrder() {
   if (S.placing) return;
   const v = (id) => ($('#' + id).value || '').trim();
   const name = v('b-name'), cls = v('b-cls'), phone = v('b-phone');
-  if (name.length < 3 || !cls || phone.replace(/\D/g, '').length < 9) {
-    $('#b-err').textContent = 'Preenche o nome, a turma e um telemóvel com 9 dígitos.';
-    return;
-  }
+  const err = $('#b-err');
+  if (name.length < 3 || !cls || phone.replace(/\D/g, '').length < 9) { err.textContent = 'Preenche o nome, a turma e um telemóvel com 9 dígitos.'; return; }
   const lines = cartLines();
   if (!lines.length) return;
-  if (lines.some((x) => x.p.sellerId === myId())) { $('#b-err').textContent = 'Não podes comprar os teus próprios produtos. Remove-os do carrinho.'; return; }
-  const ref = doc(collection(db, 'orders'));
-  const o = {
-    code: 'GS-' + ref.id.slice(0, 5).toUpperCase(),
-    date: new Date().toISOString(),
-    buyerUid: myId(),
-    buyer: { name, cls, phone, email: auth.currentUser.email || '', googleName: auth.currentUser.displayName || '' },
-    pay: $('#b-pay').value,
-    total: cartTotal(),
-    status: 'novo',
-    sellerIds: Array.from(new Set(lines.map((x) => x.p.sellerId))),
-    items: lines.map((x) => ({ id: x.p.id, name: x.p.name, price: x.p.price, qty: x.l.qty, sellerId: x.p.sellerId }))
-  };
+  if (lines.some((x) => x.p.sellerId === myId())) { err.textContent = 'Não podes comprar os teus próprios produtos. Remove-os do carrinho.'; return; }
+  if (lines.some((x) => x.l.qty > x.p.qty)) { err.textContent = 'Alguns produtos já não têm essa quantidade. Atualiza o carrinho.'; return; }
+  const bySeller = new Map();
+  lines.forEach((x) => { const k = x.p.sellerId; if (!bySeller.has(k)) bySeller.set(k, []); bySeller.get(k).push(x); });
+  const now = new Date().toISOString();
+  const buyer = { name, cls, phone, email: auth.currentUser.email || '', googleName: auth.currentUser.displayName || '' };
+  const pay = $('#b-pay').value;
+  const batch = writeBatch(db);
+  const made = [];
+  bySeller.forEach((ls, sellerId) => {
+    const ref = doc(collection(db, 'orders'));
+    const o = {
+      code: 'GS-' + ref.id.slice(0, 5).toUpperCase(), date: now, buyerUid: myId(), buyer, pay, status: 'novo',
+      sellerId, sellerName: ls[0].p.seller || 'Vendedor', sellerIds: [sellerId],
+      total: ls.reduce((a, x) => a + x.p.price * x.l.qty, 0),
+      items: ls.map((x) => ({ id: x.p.id, name: x.p.name, price: x.p.price, qty: x.l.qty, sellerId }))
+    };
+    batch.set(ref, o);
+    made.push(Object.assign({}, o, { id: ref.id }));
+  });
   S.placing = true;
   try {
+    await batch.commit();
+    S.cart = []; saveCart();
+    S.lastOrders = made; S.cartView = 'done';
+    updateBadge(); cartDlg();
+  } catch (e) { console.error(e); toast(errMsg(e), 6000); }
+  finally { S.placing = false; }
+}
+
+/* ---------- pedido -> aceitar -> chat ---------- */
+const byDateDesc = (a, b) => String(b.date || b.createdAt || '').localeCompare(String(a.date || a.createdAt || ''));
+async function openChatWhenReady(id) {
+  for (let i = 0; i < 30 && !S.chats.some((x) => x.id === id); i++) await new Promise((r) => setTimeout(r, 100));
+  openChat(id);
+}
+async function acceptOrder(id) {
+  const me = myId();
+  const o = S.orders.find((x) => x.id === id);
+  if (!o || o.status !== 'novo' || o.sellerId !== me) return;
+  const now = new Date().toISOString();
+  try {
     await runTransaction(db, async (tx) => {
-      const snaps = [];
-      for (const x of lines) snaps.push(await tx.get(doc(db, 'products', x.p.id)));
-      snaps.forEach((sn, i) => {
+      const oref = doc(db, 'orders', id);
+      const cur = await tx.get(oref);
+      if (!cur.exists() || cur.data().status !== 'novo') throw new Error('estado');
+      const ps = [];
+      for (const it of o.items) ps.push(await tx.get(doc(db, 'products', it.id)));
+      ps.forEach((sn, i) => {
         const d = sn.exists() ? sn.data() : null;
-        if (!d || d.status !== 'aprovado' || num(d.qty) < lines[i].l.qty) throw new Error('stock:' + lines[i].p.name);
+        if (!d || d.sellerId !== me || num(d.qty) < o.items[i].qty) throw new Error('stock:' + o.items[i].name);
       });
-      snaps.forEach((sn, i) => tx.update(sn.ref, { qty: num(sn.data().qty) - lines[i].l.qty }));
-      tx.set(ref, o);
+      ps.forEach((sn, i) => tx.update(sn.ref, { qty: num(sn.data().qty) - o.items[i].qty }));
+      tx.update(oref, { status: 'aceite', acceptedAt: now });
+      tx.set(doc(db, 'chats', id), {
+        members: [o.buyerUid, me], buyerUid: o.buyerUid, buyerName: String((o.buyer || {}).name || 'Comprador').split(' ')[0],
+        sellerId: me, sellerName: (userLabel() || 'Vendedor').split(' ')[0], orderId: id, orderCode: o.code || id,
+        productName: o.items[0].name + (o.items.length > 1 ? ' +' + (o.items.length - 1) : ''),
+        lastMsg: 'Pedido aceite. Combinem a entrega aqui.', lastAt: now, lastFrom: me, reads: { [me]: now }, createdAt: now
+      });
     });
-    S.cart = [];
-    saveCart();
-    S.lastOrder = Object.assign({}, o, { id: ref.id });
-    S.cartView = 'done';
-    updateBadge();
-    cartDlg();
   } catch (e) {
-    console.error(e);
     const m = String(e.message || e);
-    if (m.indexOf('stock:') > -1) { $('#b-err').textContent = 'Já não há stock suficiente de «' + m.split('stock:')[1] + '». Atualiza o carrinho.'; }
-    else toast('Erro ao enviar pedido. Tenta de novo.');
-  } finally { S.placing = false; }
+    if (m.indexOf('stock:') > -1) { toast('Sem stock suficiente de «' + m.split('stock:')[1] + '». Atualiza o stock ou recusa o pedido.', 6000); return; }
+    if (m === 'estado') { toast('Este pedido já foi tratado.'); return; }
+    throw e;
+  }
+  toast('Pedido aceite. O chat está aberto.');
+  await openChatWhenReady(id);
 }
 
 /* ---------- upload ---------- */
@@ -1115,9 +1151,9 @@ function sellerOrderTotal(o) {
   return (o.items || []).filter((i) => i.sellerId === mid).reduce((a, i) => a + (i.price * i.qty), 0);
 }
 function tabBalanco() {
-  const os = sellerOrders().filter((o) => o.status !== 'cancelado');
+  const os = sellerOrders().filter((o) => o.status !== 'cancelado' && o.status !== 'recusado');
   const entregues = os.filter((o) => o.status === 'entregue');
-  const pendentes = os.filter((o) => o.status === 'novo');
+  const pendentes = os.filter((o) => o.status === 'novo' || o.status === 'aceite');
   const totalEntregue = entregues.reduce((a, o) => a + sellerOrderTotal(o), 0);
   const totalPendente = pendentes.reduce((a, o) => a + sellerOrderTotal(o), 0);
   const totalGeral = totalEntregue + totalPendente;
@@ -1190,13 +1226,24 @@ function tabPublicar() {
 }
 function tabPedidos() {
   const mid = myId();
-  const os = sellerOrders();
-  return '<div class="panel"><h2>Pedidos</h2>' + (os.length
-    ? '<div class="rows">' + os.map((o) => {
-      const its = o.items.filter((i) => i.sellerId === mid);
-      return '<div class="row" style="grid-template-columns:minmax(0,1fr) auto"><div style="min-width:0"><div class="meta"><strong class="num" style="color:var(--ink)">' + esc(o.code || o.id) + '</strong>' + orderPill(o.status) + '</div><div>' + its.map((i) => i.qty + ' × ' + esc(i.name)).join(', ') + '</div><div class="hint">' + esc(o.buyer.name) + ', ' + esc(o.buyer.cls) + ', <span class="num">' + esc(o.buyer.phone) + '</span></div><div class="hint">' + esc(o.pay) + '</div><div class="price num" style="margin-top:4px">' + kz(sellerOrderTotal(o)) + '</div></div>' + (o.status === 'novo' ? '<button class="btn sm primary" data-act="delivered" data-id="' + o.id + '">Marcar entregue</button>' : '') + '<button class="btn sm ghost" data-act="report-buyer" data-id="' + o.id + '">' + ico('flag', 16) + 'Denunciar</button>' + '</div>';
-    }).join('') + '</div>'
-    : '<div class="empty"><strong>Sem pedidos por agora</strong><span>Quando um colega comprar um produto teu, aparece aqui.</span></div>') + '</div>';
+  const rank = { novo: 0, aceite: 1 };
+  const os = sellerOrders().sort((a, b) => (rank[a.status] != null ? rank[a.status] : 2) - (rank[b.status] != null ? rank[b.status] : 2) || byDateDesc(a, b));
+  const card = (o) => {
+    const b = o.buyer || {};
+    const its = o.items.filter((i) => i.sellerId === mid);
+    const chatBtn = (label) => '<button class="btn sm primary" data-act="chat-open" data-id="' + o.id + '">' + ico('chat', 16) + label + '</button>';
+    const acts = o.status === 'novo'
+      ? '<button class="btn sm primary" data-act="order-accept" data-id="' + o.id + '">Aceitar</button><button class="btn sm danger" data-act="order-decline" data-id="' + o.id + '">Recusar</button>'
+      : o.status === 'aceite' ? chatBtn('Abrir chat') + '<button class="btn sm" data-act="delivered" data-id="' + o.id + '">Marcar entregue</button>'
+        : o.status === 'entregue' ? chatBtn('Ver chat') : '';
+    return '<article class="ocard"><div class="ocard-h"><strong class="num">' + esc(o.code || o.id) + '</strong>' + orderPill(o.status) + '<span class="hint">' + esc(fmtDate(o.date)) + '</span></div>'
+      + '<div class="oitems">' + its.map((i) => '<div><span>' + i.qty + ' × ' + esc(i.name) + '</span><span class="num">' + kz(i.price * i.qty) + '</span></div>').join('') + '</div>'
+      + '<dl class="dl"><dt>Comprador</dt><dd>' + esc(b.name) + ', ' + esc(b.cls) + '</dd><dt>Telemóvel</dt><dd class="num">' + esc(b.phone) + '</dd><dt>Pagamento</dt><dd>' + esc(o.pay) + '</dd></dl>'
+      + '<div class="ractions">' + acts + '<button class="btn sm ghost" data-act="report-buyer" data-id="' + o.id + '">' + ico('flag', 16) + 'Denunciar</button></div></article>';
+  };
+  return '<div class="panel"><h2>Pedidos</h2><div class="note">' + ICON.info + '<span>Quando aceitas um pedido, o stock desce e abre-se um chat com o comprador.</span></div>'
+    + (os.length ? '<div class="ocards">' + os.map(card).join('') + '</div>'
+      : '<div class="empty"><strong>Sem pedidos por agora</strong><span>Quando um colega pedir um produto teu, aparece aqui para aceitares ou recusares.</span></div>') + '</div>';
 }
 function tabVerif() {
   const sv = S.seller;
@@ -1347,17 +1394,36 @@ function conversationView() {
     + '<div class="chat-msgs" id="cmsgs" aria-live="polite"></div>'
     + '<div class="chat-bar"><textarea id="cin" rows="1" maxlength="1000" placeholder="Escreve uma mensagem" aria-label="Mensagem"></textarea><button class="btn primary" data-act="chat-send" aria-label="Enviar">' + ico('send', 20) + '</button></div></div>';
 }
+function myOrderCard(o) {
+  const st = { novo: ['warn', 'À espera do vendedor'], aceite: ['info', 'Aceite'], entregue: ['ok', 'Entregue'], recusado: ['bad', 'Recusado'], cancelado: ['bad', 'Cancelado'] }[o.status] || ['', esc(o.status || '')];
+  const chat = S.chats.find((c) => c.id === o.id);
+  const hint = { novo: 'O vendedor já recebeu o teu pedido. Quando aceitar, o chat abre aqui.', recusado: 'O vendedor não pôde aceitar. Procura outro produto na loja.' }[o.status];
+  return '<article class="ocard"><div class="ocard-h"><strong class="num">' + esc(o.code || o.id) + '</strong><span class="pill ' + st[0] + '">' + st[1] + '</span><span class="hint">' + esc(fmtDate(o.date)) + '</span></div>'
+    + '<div class="oitems">' + (o.items || []).map((i) => '<div><span>' + i.qty + ' × ' + esc(i.name) + '</span><span class="num">' + kz(i.price * i.qty) + '</span></div>').join('') + '</div>'
+    + '<div class="total"><span>Vendedor: ' + esc(o.sellerName || 'Vendedor') + '</span><span class="price">' + kz(o.total) + '</span></div>'
+    + (hint ? '<p class="hint">' + hint + '</p>' : '')
+    + '<div class="ractions">' + (chat ? '<button class="btn primary" data-act="chat-open" data-id="' + esc(o.id) + '">' + ico('chat', 18) + 'Abrir chat' + (chatUnread(chat) ? ' · nova' : '') + '</button>' : '')
+    + (o.status === 'novo' ? '<button class="btn danger" data-act="my-cancel" data-id="' + esc(o.id) + '">Cancelar pedido</button>' : '') + '</div></article>';
+}
 function chatsView() {
   if (!isLoggedIn()) {
-    return header(authButtons()) + subbar('Mensagens')
-      + '<main class="wrap locked"><h2>Entra com Google para conversar</h2><p class="hint">Fala com vendedores e compradores da tua escola, sem partilhares o teu número.</p>' + loginBtn() + '</main>' + footer();
+    return header(authButtons()) + subbar('Pedidos e conversas')
+      + '<main class="wrap locked"><h2>Entra com Google para ver os teus pedidos</h2><p class="hint">Aqui acompanhas os teus pedidos e falas com o vendedor depois de ele aceitar.</p>' + loginBtn() + '</main>' + footer();
   }
-  if (isBanned()) return header(authButtons()) + '<main class="wrap locked"><h2>Conta suspensa</h2><p class="hint">Não podes usar o chat enquanto a conta estiver suspensa.</p></main>' + footer();
+  if (isBanned()) return header(authButtons()) + '<main class="wrap locked"><h2>Conta suspensa</h2><p class="hint">Não podes usar pedidos nem chat enquanto a conta estiver suspensa.</p></main>' + footer();
   if (S.chatId) return conversationView();
-  const list = S.chats.slice().sort((a, b) => String(b.lastAt || b.createdAt || '').localeCompare(String(a.lastAt || a.createdAt || '')));
-  return header(authButtons() + cartBtn()) + subbar('Mensagens')
-    + '<main class="wrap"><div class="clist">' + (list.length ? list.map(chatRow).join('')
-      : '<div class="empty"><strong>Ainda sem conversas</strong><span>Abre um produto na loja e toca em «Falar com o vendedor».</span><button class="btn primary sm" data-act="role-buy">Ir para a loja</button></div>') + '</div></main>' + footer();
+  const me = myId();
+  const toAnswer = S.orders.filter((o) => o.status === 'novo' && o.sellerId === me).length;
+  const mine = S.myOrders.slice().sort(byDateDesc);
+  const chats = S.chats.slice().sort((a, b) => String(b.lastAt || b.createdAt || '').localeCompare(String(a.lastAt || a.createdAt || '')));
+  return header(authButtons() + cartBtn()) + subbar('Pedidos e conversas')
+    + '<main class="wrap"><div class="clist">'
+    + (toAnswer ? '<div class="note">' + ICON.info + '<span>Tens <strong>' + toAnswer + '</strong> pedido' + (toAnswer > 1 ? 's' : '') + ' para responder.</span><button class="btn sm primary" data-act="go-orders">Ver pedidos</button></div>' : '')
+    + '<h2 class="h2">Os meus pedidos</h2>'
+    + (mine.length ? mine.map(myOrderCard).join('') : '<div class="empty"><strong>Ainda sem pedidos</strong><span>Escolhe um produto, faz o pedido e espera pela resposta do vendedor.</span><button class="btn primary sm" data-act="role-buy">Ir para a loja</button></div>')
+    + '<h2 class="h2">Conversas</h2>'
+    + (chats.length ? chats.map(chatRow).join('') : '<div class="empty"><strong>Sem conversas</strong><span>O chat abre quando um vendedor aceita o teu pedido.</span></div>')
+    + '</div></main>' + footer();
 }
 function paintChat() {
   const box = $('#cmsgs');
@@ -1385,27 +1451,6 @@ function openChat(id) {
     if (last && last.from !== myId()) markRead(id);
   }, (e) => { console.error(e); toast(errMsg(e), 5000); });
   markRead(id);
-}
-async function startChat(pid) {
-  if (!isLoggedIn()) { toast('Entra com Google para falar com o vendedor.'); return; }
-  if (isBanned()) { toast('A tua conta está suspensa.'); return; }
-  const p = prod(pid);
-  if (!p) return;
-  if (p.sellerId === myId()) { toast('Este produto é teu.'); return; }
-  const id = pid + '_' + myId();
-  const ref = doc(db, 'chats', id);
-  if (!(await getDoc(ref)).exists()) {
-    const now = new Date().toISOString();
-    await setDoc(ref, {
-      members: [myId(), p.sellerId], buyerUid: myId(), buyerName: (userLabel() || 'Comprador').split(' ')[0],
-      sellerId: p.sellerId, sellerName: p.seller || 'Vendedor', productId: pid, productName: p.name,
-      lastMsg: '', lastAt: now, lastFrom: '', reads: { [myId()]: now }, createdAt: now
-    });
-  }
-  closeDlg();
-  /* espera o chat chegar à lista local (a escrita local aparece de imediato) */
-  for (let i = 0; i < 30 && !S.chats.some((x) => x.id === id); i++) await new Promise((r) => setTimeout(r, 100));
-  openChat(id);
 }
 function sendMsg() {
   const el = $('#cin');
@@ -1600,7 +1645,7 @@ async function decideSeller(id, kind) {
   }
 }
 function orderPill(st) {
-  return { novo: '<span class="pill warn">Novo</span>', entregue: '<span class="pill ok">' + ICON.check + 'Entregue</span>', cancelado: '<span class="pill bad">Cancelado</span>' }[st] || '<span class="pill">' + esc(st || '') + '</span>';
+  return { novo: '<span class="pill warn">Novo</span>', entregue: '<span class="pill ok">' + ICON.check + 'Entregue</span>', aceite: '<span class="pill info">Aceite</span>', recusado: '<span class="pill bad">Recusado</span>', cancelado: '<span class="pill bad">Cancelado</span>' }[st] || '<span class="pill">' + esc(st || '') + '</span>';
 }
 function sellerLabel(id) {
   const sv = S.sellers[id];
@@ -1615,7 +1660,7 @@ function orderCard(o) {
     + '<div class="oitems">' + (o.items || []).map((i) => '<div><span>' + i.qty + ' × ' + esc(i.name) + '</span><span class="num">' + kz(i.price * i.qty) + '</span></div>').join('') + '</div>'
     + '<div class="total"><span>Total</span><span class="price">' + kz(o.total) + '</span></div>'
     + '<dl class="dl"><dt>Comprador</dt><dd>' + esc(b.name) + ', ' + esc(b.cls) + '</dd><dt>Telemóvel</dt><dd class="num">' + esc(b.phone) + '</dd><dt>Email</dt><dd>' + esc(b.email) + '</dd><dt>Vendedor</dt><dd>' + esc(sellers) + '</dd><dt>Pagamento</dt><dd>' + esc(o.pay) + '</dd></dl>'
-    + (o.status === 'novo' ? '<div class="ractions"><button class="btn primary" data-act="delivered" data-id="' + o.id + '">Marcar entregue</button><button class="btn danger" data-act="order-cancel" data-id="' + o.id + '">Cancelar pedido</button></div>' : '') + '</article>';
+    + (o.status === 'novo' || o.status === 'aceite' ? '<div class="ractions">' + (o.status === 'aceite' ? '<button class="btn primary" data-act="delivered" data-id="' + o.id + '">Marcar entregue</button>' : '') + '<button class="btn danger" data-act="order-cancel" data-id="' + o.id + '">Cancelar pedido</button></div>' : '') + '</article>';
 }
 function adminOrders() {
   const note = S.err.orders ? '<div class="note">' + ICON.info + '<span>Não consegui ler os pedidos (' + esc(S.err.orders) + '). Confirma as regras do Firestore para a conta de administração.</span></div>' : '';
@@ -1632,18 +1677,19 @@ function adminUsers(users) {
 }
 async function cancelOrder(id) {
   const o = S.orders.find((x) => x.id === id);
-  if (!o || o.status !== 'novo') return;
+  if (!o || (o.status !== 'novo' && o.status !== 'aceite')) return;
   await runTransaction(db, async (tx) => {
     const ref = doc(db, 'orders', id);
     const cur = await tx.get(ref);
-    if (!cur.exists() || cur.data().status !== 'novo') throw new Error('estado');
+    const st = cur.exists() ? cur.data().status : '';
+    if (st !== 'novo' && st !== 'aceite') throw new Error('estado');
     const ps = [];
-    for (const it of o.items) ps.push(await tx.get(doc(db, 'products', it.id)));
+    if (st === 'aceite') for (const it of o.items) ps.push(await tx.get(doc(db, 'products', it.id))); /* só repõe stock se já tinha sido descontado */
     ps.forEach((sn, i) => { if (sn.exists()) tx.update(sn.ref, { qty: num(sn.data().qty) + num(o.items[i].qty) }); });
     tx.update(ref, { status: 'cancelado', cancelledAt: new Date().toISOString() });
   });
   closeDlg();
-  toast('Pedido cancelado e stock reposto');
+  toast('Pedido cancelado');
 }
 function reviewCard(p) {
   const a = S.sellers[p.sellerId] || {};
@@ -1845,9 +1891,8 @@ Object.assign(ACT, {
   'chat-open': (b, id) => openChat(id),
   'chat-back': () => { leaveChat(); render(); },
   'chat-send': () => sendMsg(),
-  'chat-start': (b, id) => startChat(id),
   'report-product': (b, id) => { const p = prod(id); if (p) openReport({ uid: p.sellerId, name: p.seller, pid: p.id, pname: p.name, label: 'Vendedor ' + (p.seller || '') + ' · ' + p.name }); },
-  'report-chat': () => { const c = S.chats.find((x) => x.id === S.chatId); if (c) { const o = otherOf(c); openReport({ uid: o.uid, name: o.name, pid: c.productId, pname: c.productName, chatId: c.id, label: 'Conversa com ' + o.name + ' · ' + (c.productName || '') }); } },
+  'report-chat': () => { const c = S.chats.find((x) => x.id === S.chatId); if (c) { const o = otherOf(c); openReport({ uid: o.uid, name: o.name, pname: c.productName, order: c.orderCode, chatId: c.id, label: 'Conversa com ' + o.name + ' · ' + (c.productName || '') }); } },
   'report-buyer': (b, id) => { const o = S.orders.find((x) => x.id === id); if (o) openReport({ uid: o.buyerUid, name: (o.buyer || {}).name, order: o.code || o.id, label: 'Comprador ' + ((o.buyer || {}).name || '') + ' · pedido ' + (o.code || o.id) }); },
   'report-send': () => sendReport(),
   'report-status': (b, id) => updateDoc(doc(db, 'reports', id), { status: b.dataset.s === 'resolvida' ? 'resolvida' : 'aberta', handledAt: new Date().toISOString() }),
@@ -1855,6 +1900,14 @@ Object.assign(ACT, {
   'support-send': () => sendSupport(),
   'support-mail': () => mailSupport(),
   'ticket-status': (b, id) => updateDoc(doc(db, 'support', id), { status: b.dataset.s === 'tratado' ? 'tratado' : 'novo', handledAt: new Date().toISOString() })
+});
+Object.assign(ACT, {
+  'order-accept': (b, id) => acceptOrder(id),
+  'order-decline': (b, id) => ask('Recusar pedido?', 'O comprador vê que o pedido foi recusado.', 'confirm-decline', id, 'Recusar pedido'),
+  'confirm-decline': async (b, id) => { await updateDoc(doc(db, 'orders', id), { status: 'recusado', declinedAt: new Date().toISOString() }); closeDlg(); toast('Pedido recusado'); },
+  'my-cancel': (b, id) => ask('Cancelar o pedido?', 'O vendedor ainda não respondeu. Podes cancelar sem problema.', 'confirm-my-cancel', id, 'Cancelar pedido'),
+  'confirm-my-cancel': async (b, id) => { await updateDoc(doc(db, 'orders', id), { status: 'cancelado', cancelledAt: new Date().toISOString() }); closeDlg(); toast('Pedido cancelado'); },
+  'go-orders': () => { S.tab = 'pedidos'; go('sell'); }
 });
 ['approve', 'more', 'reject', 'block'].forEach((k) => { ACT[k] = (b, id) => decide(id, k); });
 ['ok', 'no', 'block', 'unblock'].forEach((k) => { ACT['seller-' + k] = (b, id) => decideSeller(id, k); });
