@@ -12,19 +12,16 @@
 //  MAIL_FROM                 remetente verificado no Resend, ex.: "GiraShop <avisos@teu-dominio.com>"
 //  SITE_URL                  (opcional) por omissão https://girashop.vercel.app
 
-const admin = require('firebase-admin');
+const { admin, init, sendPush } = require('./_push');
 
 const SITE = (process.env.SITE_URL || 'https://girashop.vercel.app').replace(/\/$/, '');
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const STALE_SENDING_MS = 2 * 60 * 1000;
 
-function init() {
-  if (admin.apps.length) return;
-  admin.initializeApp({ credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
-}
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 async function sendMail(to, subject, html, text) {
+  if (!process.env.RESEND_API_KEY || !process.env.MAIL_FROM) throw new Error('mail-not-configured');
   const r = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
@@ -51,6 +48,16 @@ async function handleOne(db, uid, id) {
   const o = claim.order;
 
   try {
+    // push no Chrome ao vendedor (a etiqueta 'order-<id>' evita notificações repetidas)
+    try {
+      const its = Array.isArray(o.items) ? o.items : [];
+      const nm = its.length ? String(its[0].name || 'Produto') + (its.length > 1 ? ' +' + (its.length - 1) : '') : 'Produto';
+      await sendPush(db, o.sellerId, { title: 'Novo pedido no GiraShop', body: nm.slice(0, 60) + ' · ' + (o.code || id), url: SITE + '/?abrir=pedidos', tag: 'order-' + id });
+    } catch (e) { console.warn('push falhou', e && e.code); }
+    if (!process.env.RESEND_API_KEY || !process.env.MAIL_FROM) {
+      await ref.update({ emailStatus: 'skipped', emailNote: 'e-mail não configurado' });
+      return { id, status: 'skipped', final: true };
+    }
     // e-mail do vendedor vem da base de dados
     let to = '';
     const sv = await db.collection('sellers').doc(o.sellerId).get();
@@ -87,7 +94,7 @@ async function handleOne(db, uid, id) {
 module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return res.status(405).json({ error: 'method' }); }
-  if (!process.env.FIREBASE_SERVICE_ACCOUNT || !process.env.RESEND_API_KEY || !process.env.MAIL_FROM) {
+  if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
     return res.status(503).json({ error: 'not-configured' });
   }
   try {
