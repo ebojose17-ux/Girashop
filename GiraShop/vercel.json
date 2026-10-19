@@ -1,6 +1,0 @@
-{
-  "rewrites": [
-    { "source": "/termos-de-uso", "destination": "/index.html" },
-    { "source": "/privacidade", "destination": "/index.html" }
-  ]
-}
