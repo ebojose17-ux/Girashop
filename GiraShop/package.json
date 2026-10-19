@@ -1,0 +1,10 @@
+{
+  "name": "girashop",
+  "private": true,
+  "version": "1.1.0",
+  "description": "GiraShop: site estático (index.html) + função serverless de avisos por e-mail",
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "firebase-admin": "^12.7.0"
+  }
+}
