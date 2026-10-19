@@ -1,14 +1,34 @@
-// Avisa o COMPRADOR (push no Chrome) quando o vendedor aceita, recusa ou entrega um pedido.
-// Exige o token do VENDEDOR; só envia se orders/{id}.sellerId == uid e o estado do pedido é o indicado.
+// Avisa a outra pessoa (push no telemóvel/Chrome) quando o estado de um pedido muda.
+//  - vendedor aceita / recusa / entrega  -> aviso ao COMPRADOR
+//  - comprador ou vendedor cancela       -> aviso à outra pessoa
+// Também repõe o stock quando o COMPRADOR cancela um pedido que o vendedor já tinha aceite
+// (o comprador não tem permissão para escrever nos produtos, por isso é o servidor que o faz).
 const { admin, init, sendPush } = require('./_push');
 
 const SITE = (process.env.SITE_URL || 'https://girashop.vercel.app').replace(/\/$/, '');
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const MSG = {
-  aceite: (n) => ['Pedido aceite', n + ' foi aceite. Abre o chat para combinar a entrega.'],
+  aceite: (n) => ['Pedido aceite ✅', n + ' foi aceite. Abre o chat para combinar a entrega.'],
   recusado: (n) => ['Pedido recusado', 'O vendedor não pôde aceitar ' + n + '. Procura outro produto na loja.'],
-  entregue: (n) => ['Pedido entregue', n + ' foi marcado como entregue.']
+  entregue: (n) => ['Pedido entregue', n + ' foi marcado como entregue.'],
+  cancelado: (n) => ['Pedido cancelado', 'O pedido de ' + n + ' foi cancelado. A conversa foi encerrada.']
 };
+
+async function restoreStock(db, id) {
+  await db.runTransaction(async (tx) => {
+    const ref = db.collection('orders').doc(id);
+    const snap = await tx.get(ref);
+    const o = snap.data();
+    if (!o || o.stockRestored || !o.acceptedAt || o.status !== 'cancelado' || o.cancelledBy !== o.buyerUid) return;
+    const items = Array.isArray(o.items) ? o.items : [];
+    const prods = [];
+    for (const it of items) prods.push(await tx.get(db.collection('products').doc(String(it.id))));
+    prods.forEach((ps, i) => {
+      if (ps.exists && ps.data().sellerId === o.sellerId) tx.update(ps.ref, { qty: (Number(ps.data().qty) || 0) + (Number(items[i].qty) || 0) });
+    });
+    tx.update(ref, { stockRestored: true });
+  });
+}
 
 module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
@@ -27,14 +47,25 @@ module.exports = async (req, res) => {
     const snap = await ref.get();
     if (!snap.exists) return res.status(404).json({ error: 'not-found' });
     const o = snap.data();
-    if (o.sellerId !== decoded.uid) return res.status(403).json({ error: 'forbidden' });
+    const uid = decoded.uid;
     if (!MSG[o.status]) return res.status(200).json({ status: 'ignored' });
-    // idempotente por estado
+
+    let to;
+    if (o.status === 'cancelado') {
+      const by = o.cancelledBy || o.buyerUid; // cancelamento antes de aceitar não guarda cancelledBy: foi o comprador
+      if (uid !== by || (uid !== o.buyerUid && uid !== o.sellerId)) return res.status(403).json({ error: 'forbidden' });
+      to = uid === o.buyerUid ? o.sellerId : o.buyerUid;
+      if (uid === o.buyerUid && o.acceptedAt) await restoreStock(db, id).catch((e) => console.warn('stock', e && e.message));
+    } else {
+      if (o.sellerId !== uid) return res.status(403).json({ error: 'forbidden' });
+      to = o.buyerUid;
+    }
     if (o.pushStatus === o.status) return res.status(200).json({ status: 'already' });
     await ref.update({ pushStatus: o.status });
-    const item = Array.isArray(o.items) && o.items.length ? String(o.items[0].name || 'O teu pedido') : 'O teu pedido';
+    const item = Array.isArray(o.items) && o.items.length ? String(o.items[0].name || 'O pedido') : 'O pedido';
     const [title, text] = MSG[o.status](item);
-    const r = await sendPush(db, o.buyerUid, { title, body: text, url: SITE + '/?abrir=compras', tag: 'order-' + id + '-' + o.status });
+    const toSeller = to === o.sellerId;
+    const r = await sendPush(db, to, { title, body: text, url: SITE + (toSeller ? '/?abrir=pedidos' : '/?abrir=compras'), tag: 'order-' + id + '-' + o.status });
     return res.status(200).json({ status: 'ok', sent: r.sent });
   } catch (e) {
     const code = e && e.code && String(e.code).startsWith('auth/') ? 401 : 500;

@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="google" content="notranslate">
 <meta name="theme-color" content="#D6EFE1">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="GiraShop">
 <title>GiraShop — Comprar e vender com responsabilidade</title>
 <meta name="description" content="Compra e vende EPI, material didático, uniformes e ferramentas entre colegas. Vendedores verificados e pedidos combinados diretamente com o vendedor.">
 <link rel="canonical" href="https://girashop.vercel.app/">
@@ -615,6 +620,44 @@ dialog{overscroll-behavior:contain}
 }
 @media (min-width:1500px){.wrap{max-width:1400px}.grid{grid-template-columns:repeat(auto-fill,minmax(270px,1fr))}}
 @media (prefers-reduced-motion:reduce){.card:hover,.tile:hover,.tr:hover,.iconbtn:hover{transform:none}}
+
+/* ===== v8: abas no PC, chat encerrado, convite de notificações ===== */
+.dtabs{display:none}
+.pb-btns{display:flex;gap:6px;flex:none;flex-wrap:wrap;justify-content:flex-end}
+.pushprompt{position:fixed;z-index:60;left:12px;right:12px;bottom:calc(86px + env(safe-area-inset-bottom,0px));display:flex;align-items:center;gap:12px;padding:14px;background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:0 18px 40px -16px rgba(6,54,42,.55);animation:ppin .3s ease both}
+.pushprompt .pp-ic{width:42px;height:42px;border-radius:12px;background:var(--brand-bg);color:var(--brand-d);display:grid;place-items:center;flex:none}
+.pushprompt .pp-t{flex:1;min-width:0}
+.pushprompt .pp-t strong{display:block}
+.pushprompt .hint{margin:2px 0 0;font-size:.85rem}
+.pushprompt .btn{flex:none}
+@keyframes ppin{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@media (max-width:560px){.pushprompt{flex-wrap:wrap}.pushprompt .pp-t{flex-basis:calc(100% - 60px)}.pushprompt .btn{flex:1}}
+.chat-closed{display:flex;align-items:center;gap:10px;justify-content:center;padding:14px 16px calc(14px + env(safe-area-inset-bottom,0px));background:var(--surface);border-top:1px solid var(--line);color:var(--muted,#51635B);font-weight:600;text-align:center}
+.chat-closed svg{flex:none}
+#chattopact{display:contents}
+.howgrid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.howgrid li{display:flex;gap:12px;align-items:flex-start;padding:16px;background:var(--surface);border:1px solid var(--line);border-radius:16px}
+.howgrid .n{flex:none;width:32px;height:32px;border-radius:50%;background:var(--brand);color:#fff;display:grid;place-items:center;font-weight:800}
+.howgrid h3{margin:0 0 2px;font-size:1rem}.howgrid p{margin:0;font-size:.9rem;color:var(--muted,#51635B)}
+@media (max-width:900px){.howgrid{grid-template-columns:1fr 1fr}}
+@media (max-width:520px){.howgrid{grid-template-columns:1fr}}
+@media (min-width:820px){
+  .bar{grid-template-columns:auto 1fr auto}
+  .bar-l{display:none}
+  .logo{justify-self:start}
+  .dtabs{display:flex;align-items:center;justify-content:center;gap:6px}
+  .dt{position:relative;display:inline-flex;align-items:center;gap:8px;padding:.6rem 1.05rem;border:0;border-radius:99px;background:transparent;color:var(--ink);font:inherit;font-weight:700;cursor:pointer;transition:background .15s,color .15s}
+  .dt:hover{background:rgba(255,255,255,.7);color:var(--brand-d)}
+  .dt[aria-current=page]{background:var(--brand);color:#fff}
+  .dt .chatdot{position:static;margin-left:2px;min-width:20px;height:20px;border-radius:99px;background:#D93025;color:#fff;font-size:.72rem;font-style:normal;display:inline-grid;place-items:center;padding:0 5px}
+  .dt .chatdot[hidden]{display:none}
+  .pushprompt{left:auto;right:24px;bottom:24px;width:min(440px,calc(100vw - 48px))}
+  .fab{bottom:96px}
+}
+@media (min-width:1024px){
+  .chatscreen{inset:20px 0;height:calc(100dvh - 40px);max-width:880px;border-radius:22px;border:1px solid var(--line);box-shadow:0 30px 70px -30px rgba(6,54,42,.6);overflow:hidden}
+  body.in-chat{background:rgba(6,30,23,.08)}
+}
 </style>
 </head>
 <body>
@@ -931,7 +974,7 @@ function startListeners() {
   on(query(collection(db, 'chats'), where('members', 'array-contains', uid)), (snap) => { S.chats = mapDocs(snap, (c) => c); chatsChanged(); }, 'chats');
   on(query(collection(db, 'orders'), where('buyerUid', '==', uid)), (snap) => { S.myOrders = mapDocs(snap, normOrder); chatsChanged(); }, 'myorders');
   if (admin) {
-    on(collection(db, 'orders'), (snap) => { S.orders = mapDocs(snap, normOrder); refresh(); }, 'orders');
+    on(collection(db, 'orders'), (snap) => { S.orders = mapDocs(snap, normOrder); refresh(); syncChatFoot(); }, 'orders');
     on(collection(db, 'sellers'), (snap) => {
       S.sellers = {}; snap.docs.forEach((d) => { if (okId(d.id)) S.sellers[d.id] = d.data(); });
       S.seller = S.sellers[uid] || null; refresh();
@@ -945,7 +988,7 @@ function startListeners() {
     if (isMainAdminUser()) on(query(collection(db, 'adminLog'), orderBy('at', 'desc'), limit(10)), (snap) => { S.adminLog = mapDocs(snap, (x) => x); refresh(); }, 'adminlog');
   } else {
     on(doc(db, 'sellers', uid), (snap) => { S.seller = snap.exists() ? snap.data() : null; refresh(); }, 'seller');
-    on(query(collection(db, 'orders'), where('sellerIds', 'array-contains', uid)), (snap) => { S.orders = mapDocs(snap, normOrder); refresh(); }, 'orders');
+    on(query(collection(db, 'orders'), where('sellerIds', 'array-contains', uid)), (snap) => { S.orders = mapDocs(snap, normOrder); refresh(); syncChatFoot(); }, 'orders');
   }
 }
 
@@ -962,9 +1005,17 @@ async function setSellerProducts(uid, from, to) {
 function logo() {
   return '<button class="logo" data-act="go-gate" aria-label="GiraShop, voltar ao início"><span class="wm"><i>Gira</i><u>Shop</u></span></button>';
 }
+function dtabs() {
+  const on = (v) => (S.view === v ? ' aria-current="page"' : '');
+  return '<nav class="dtabs" aria-label="Menu principal">'
+    + '<button class="dt" data-act="go-gate"' + on('gate') + '>' + ico('home', 20) + '<span>Início</span></button>'
+    + '<button class="dt" data-act="role-buy"' + on('buy') + '>' + ico('store', 20) + '<span>Loja</span></button>'
+    + '<button class="dt" data-act="role-sell"' + on('sell') + '>' + ico('plus', 20) + '<span>Vender</span></button>'
+    + '<button class="dt" data-act="nav-chat"' + on('chats') + '>' + ico('box', 20) + '<span>Pedidos</span><i class="chatdot" hidden>0</i></button></nav>';
+}
 function header(right, left) {
   return '<div class="ann"><b>Entrega dentro da escola</b> · Vendedores verificados · Sem pagamento no site</div><header class="top"><div class="wrap bar"><div class="bar-l">'
-    + (left || '<button class="btn ghost sm hide-m" data-act="go-gate">‹ Início</button>') + '</div>' + logo() + '<div class="bar-r">' + (right || '') + '</div></div></header>';
+    + (left || '<button class="btn ghost sm hide-m" data-act="go-gate">‹ Início</button>') + '</div>' + logo() + dtabs() + '<div class="bar-r">' + (right || '') + '</div></div></header>';
 }
 function cartBtn() {
   return '<button class="iconbtn" data-act="open-cart" aria-label="Abrir carrinho">' + ico('cart', 22) + '<span class="badge cartn" data-n="' + cartCount() + '">' + cartCount() + '</span></button>';
@@ -1344,7 +1395,12 @@ function gateView() {
     + '<div class="hero-cta"><button class="btn sun lg" data-act="role-buy">Entrar na loja</button><button class="btn outline-w lg" data-act="role-sell">Quero vender</button></div></div>'
     + '<div class="hero-art" aria-hidden="true">' + CATS.map((c) => '<span class="bub">' + glyph(c.id) + '<em>' + esc(c.name) + '</em></span>').join('') + '</div></div></section>'
     + '<div class="trust">' + trust.map((t) => '<div class="tr"><span class="ti">' + ico(t[0], 22) + '</span><div><strong>' + t[1] + '</strong><span>' + t[2] + '</span></div></div>').join('') + '</div></div>'
-    + '<main class="wrap"><section class="sec"><h2>Compra por categoria</h2><div class="tiles">'
+    + '<main class="wrap"><section class="sec how"><h2>Como funciona</h2><ol class="howgrid">'
+    + '<li><span class="n">1</span><div><h3>Escolhe</h3><p>Procura na loja o material que precisas.</p></div></li>'
+    + '<li><span class="n">2</span><div><h3>Faz o pedido</h3><p>Entras com Google e envias o pedido ao vendedor.</p></div></li>'
+    + '<li><span class="n">3</span><div><h3>O vendedor aceita</h3><p>Recebes um aviso no telemóvel e o chat abre.</p></div></li>'
+    + '<li><span class="n">4</span><div><h3>Combinam a entrega</h3><p>Entrega na escola e pagamento diretamente com o vendedor.</p></div></li></ol></section>'
+    + '<section class="sec"><h2>Compra por categoria</h2><div class="tiles">'
     + CATS.map((c) => '<button class="tile" data-act="role-buy-cat" data-c="' + c.id + '" style="--cat:' + c.cat + '"><span class="tile-ic">' + glyph(c.id) + '</span><span>' + esc(c.name) + '</span></button>').join('')
     + '</div></section>'
     + '<section class="sec"><div class="sh"><h2>Em destaque</h2><button class="link" data-act="role-buy">Ver tudo ›</button></div>'
@@ -1530,8 +1586,13 @@ async function placeOrder() {
    Precisa da chave VAPID: Firebase → Definições do projeto → Cloud Messaging → Certificados push da Web → Gerar par de chaves. */
 const VAPID_KEY = 'BLPV9-c_NjSofryy8YGyr6yRwc87e4sgfn4tZs69PrCx1d5lssWbxqLw_Xi6NLFEKwwSyupj_IvLprpm9LjTkQk';
 const PUSH_FLAG = 'gs_push_on';
+const IS_IOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const IS_STANDALONE = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+let installEvt = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; });
 function pushPossible() { return !!VAPID_KEY && 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window; }
 function pushState() {
+  if (IS_IOS && !IS_STANDALONE) return 'ios'; /* no iPhone as notificações só funcionam com o site instalado no ecrã principal */
   if (!pushPossible()) return 'unsupported';
   if (Notification.permission === 'denied') return 'denied';
   if (Notification.permission === 'granted' && localStorage.getItem(PUSH_FLAG) === myId()) return 'on';
@@ -1553,27 +1614,51 @@ async function enablePush() {
   if (!isLoggedIn()) { toast('Inicia sessão primeiro.'); return; }
   if (!VAPID_KEY) { toast('Notificações ainda não configuradas pelo administrador.', 5000); return; }
   if (!pushPossible()) { toast('Este navegador não suporta notificações.', 5000); return; }
-  if (Notification.permission === 'denied') { toast('Bloqueaste as notificações. Clica no cadeado junto ao endereço do site e permite-as.', 7000); return; }
+  if (Notification.permission === 'denied') { toast('Bloqueaste as notificações. Toca no cadeado junto ao endereço do site e permite-as.', 7000); return; }
   try {
     const ok = await savePushToken(true);
-    toast(ok ? 'Notificações do Chrome ativadas ✓' : 'Notificações não ativadas.', 4000);
+    toast(ok ? 'Notificações ativadas ✓' : 'Notificações não ativadas.', 4000);
   } catch (e) { console.error(e); toast('Não foi possível ativar as notificações.', 5000); }
+  const pp = document.getElementById('pushprompt'); if (pp) pp.remove();
   if (S.notifOpen) openNotifs();
 }
 function pushBox() {
   const st = pushState();
+  const inst = installEvt && !IS_STANDALONE ? '<button class="btn sm" data-act="install-app">Instalar app</button>' : '';
   if (st === 'unsupported') return '';
-  if (st === 'on') return '<div class="pushbox on"><span>' + ICON.check + '</span><div><strong>Notificações do Chrome ativas</strong><div class="hint">Recebes avisos de pedidos mesmo com o site fechado.</div></div></div>';
-  if (st === 'denied') return '<div class="pushbox"><div><strong>Notificações bloqueadas</strong><div class="hint">Clica no cadeado junto ao endereço e permite as notificações deste site.</div></div></div>';
-  return '<div class="pushbox"><div><strong>Recebe avisos no Chrome</strong><div class="hint">Pedidos novos e respostas, mesmo com o site fechado.</div></div><button class="btn sm primary" data-act="enable-push">Ativar</button></div>';
+  if (st === 'ios') return '<div class="pushbox"><div><strong>Recebe avisos no iPhone</strong><div class="hint">Toca em Partilhar e depois «Adicionar ao ecrã principal». Abre o GiraShop por esse ícone e ativa as notificações.</div></div></div>';
+  if (st === 'on') return '<div class="pushbox on"><span>' + ICON.check + '</span><div><strong>Notificações ativas</strong><div class="hint">Recebes pedidos e mensagens mesmo com o site fechado.</div></div><div class="pb-btns"><button class="btn sm" data-act="push-test">Testar</button>' + inst + '</div></div>';
+  if (st === 'denied') return '<div class="pushbox"><div><strong>Notificações bloqueadas</strong><div class="hint">Toca no cadeado junto ao endereço e permite as notificações deste site.</div></div></div>';
+  return '<div class="pushbox"><div><strong>Recebe avisos no telemóvel</strong><div class="hint">Pedidos novos, respostas e mensagens do chat, mesmo com o site fechado.</div></div><div class="pb-btns"><button class="btn sm primary" data-act="enable-push">Ativar</button>' + inst + '</div></div>';
 }
-function notifyStatus(orderId) {
-  if (!auth.currentUser) return;
-  auth.currentUser.getIdToken().then((tok) => fetch('/api/notify-status', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok }, body: JSON.stringify({ orderId }) })).catch(() => {});
+function authPost(url, payload) {
+  if (!auth.currentUser) return Promise.resolve(null);
+  return auth.currentUser.getIdToken()
+    .then((tok) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok }, body: JSON.stringify(payload) }))
+    .then((r) => r.json().catch(() => ({}))).catch(() => null);
+}
+function notifyStatus(orderId) { authPost('/api/notify-status', { orderId }); }
+function notifyChat(chatId) { authPost('/api/notify-chat', { chatId }); }
+async function pushTest() {
+  const r = await authPost('/api/push-test', {});
+  toast(r && r.sent ? 'Teste enviado. Deve aparecer agora ✓' : (r && r.sent === 0 ? 'Este dispositivo ainda não está registado. Ativa de novo as notificações.' : 'Não foi possível enviar o teste.'), 6000);
+}
+/* convite para ativar (aparece uma vez a cada 3 dias enquanto não ativar) */
+function maybePushPrompt() {
+  if (document.getElementById('pushprompt') || !S.authReady || !isLoggedIn() || isBanned() || inChat()) return;
+  const st = pushState();
+  if (st !== 'off' && st !== 'ios') return;
+  if (st === 'off' && Notification.permission !== 'default') return;
+  let t = 0; try { t = Number(localStorage.getItem('gs_push_dis') || 0); } catch (e) { /* ok */ }
+  if (Date.now() - t < 3 * 24 * 3600 * 1000) return;
+  const d = document.createElement('div');
+  d.id = 'pushprompt'; d.className = 'pushprompt'; d.setAttribute('role', 'dialog'); d.setAttribute('aria-label', 'Ativar notificações');
+  d.innerHTML = '<span class="pp-ic">' + ico('bell', 22) + '</span><div class="pp-t"><strong>Não percas nenhum pedido</strong><div class="hint">'
+    + (st === 'ios' ? 'No iPhone: Partilhar › Adicionar ao ecrã principal, e abre o GiraShop por esse ícone para receber avisos.' : 'Ativa as notificações e recebe pedidos e mensagens no telemóvel, como no WhatsApp, mesmo com o site fechado.') + '</div></div>'
+    + (st === 'off' ? '<button class="btn sm primary" data-act="enable-push">Ativar</button>' : '') + '<button class="btn sm ghost" data-act="push-later">Agora não</button>';
+  document.body.appendChild(d);
 }
 
-/* ---------- notificações ao vendedor ---------- */
-const unreadN = () => S.notifs.filter((n) => !n.read).length;
 function updateNotifBadge() {
   const n = unreadN();
   document.querySelectorAll('.notifn').forEach((b) => { b.textContent = n > 9 ? '9+' : n; b.dataset.n = n; });
@@ -1960,7 +2045,11 @@ function updateChatDot() {
 }
 function stopMsgs() { if (msgUnsub) { msgUnsub(); msgUnsub = null; } S.msgs = []; }
 function leaveChat() { stopMsgs(); S.chatId = null; }
-function chatsChanged() { updateChatDot(); if (S.view === 'chats' && !S.chatId) softRender(); }
+function chatsChanged() {
+  updateChatDot();
+  if (window.__pendChat && S.chats.some((x) => x.id === window.__pendChat)) { const id = window.__pendChat; window.__pendChat = null; openChat(id); return; }
+  if (S.view === 'chats' && !S.chatId) softRender(); else syncChatFoot();
+}
 function markRead(id) { updateDoc(doc(db, 'chats', id), { ['reads.' + myId()]: new Date().toISOString() }).catch(() => {}); }
 
 function chatRow(c) {
@@ -1971,30 +2060,55 @@ function chatRow(c) {
 }
 async function cancelFromChat(id) {
   const me = myId();
-  const o = S.myOrders.find((x) => x.id === id) || S.orders.find((x) => x.id === id);
+  const o = chatOrder(id);
   if (!o || o.status !== 'aceite') { toast('Este pedido já não pode ser cancelado.'); return false; }
   const isSeller = o.sellerId === me;
   const now = new Date().toISOString();
+  const text = (isSeller ? 'O vendedor cancelou o pedido.' : 'O comprador cancelou o pedido.') + ' Esta conversa foi encerrada.';
   try {
+    /* tudo na mesma transação: stock (vendedor), estado do pedido e mensagem final. Depois disto, ninguém escreve mais no chat. */
     await runTransaction(db, async (tx) => {
       const oref = doc(db, 'orders', id);
       const cur = await tx.get(oref);
       if (!cur.exists() || cur.data().status !== 'aceite') throw new Error('estado');
       const ps = [];
-      if (isSeller) for (const it of o.items) ps.push(await tx.get(doc(db, 'products', it.id))); /* o vendedor repõe o stock */
+      if (isSeller) for (const it of o.items) ps.push(await tx.get(doc(db, 'products', it.id))); /* o vendedor repõe o stock; se for o comprador, o servidor repõe */
       ps.forEach((sn, i) => { if (sn.exists()) tx.update(sn.ref, { qty: num(sn.data().qty) + num(o.items[i].qty) }); });
+      tx.set(doc(collection(db, 'chats', id, 'messages')), { from: me, text, at: now });
+      tx.update(doc(db, 'chats', id), { lastMsg: text.slice(0, 80), lastAt: now, lastFrom: me, ['reads.' + me]: now });
       tx.update(oref, { status: 'cancelado', cancelledAt: now, cancelledBy: me });
     });
   } catch (e) {
     if (String(e.message || e) === 'estado') { toast('Este pedido já foi tratado.'); return false; }
     throw e;
   }
-  const text = isSeller ? 'O vendedor cancelou o pedido.' : 'O comprador cancelou o pedido. O vendedor deve repor o stock.';
-  const batch = writeBatch(db);
-  batch.set(doc(collection(db, 'chats', id, 'messages')), { from: me, text, at: now });
-  batch.update(doc(db, 'chats', id), { lastMsg: text.slice(0, 80), lastAt: now, lastFrom: me, ['reads.' + me]: now });
-  await batch.commit().catch((e) => console.error(e));
+  notifyStatus(id);
   return true;
+}
+const chatOrder = (id) => S.myOrders.find((x) => x.id === id) || S.orders.find((x) => x.id === id);
+const chatOpenNow = (c) => { const o = chatOrder(c.id); return !!(o && o.status === 'aceite'); };
+function chatClosedMsg(c) {
+  const o = chatOrder(c.id);
+  if (!o) return 'A verificar o estado do pedido…';
+  return { cancelado: 'Este pedido foi cancelado. A conversa está encerrada.', entregue: 'Pedido entregue. A conversa está encerrada.', recusado: 'Pedido recusado. A conversa está encerrada.' }[o.status] || 'A conversa está encerrada.';
+}
+function chatFootHtml(c) {
+  if (chatOpenNow(c)) return '<div class="chat-bar"><textarea id="cin" rows="1" maxlength="1000" placeholder="Escreve uma mensagem" aria-label="Mensagem"></textarea><button class="btn primary" data-act="chat-send" aria-label="Enviar">' + ico('send', 20) + '</button></div>';
+  return '<div class="chat-closed" role="status">' + ICON.info + '<span>' + esc(chatClosedMsg(c)) + '</span></div>';
+}
+function chatTopAct(c) {
+  const o = chatOrder(c.id);
+  return o && o.status === 'aceite' ? '<button class="btn sm danger" data-act="chat-cancel">Cancelar pedido</button>' : '';
+}
+/* Se o pedido mudar enquanto o chat está aberto (o outro cancelou, entrega...), fecha a caixa de escrita na hora */
+function syncChatFoot() {
+  if (!inChat()) return;
+  const c = S.chats.find((x) => x.id === S.chatId);
+  const foot = $('#chatfoot');
+  if (!c || !foot) return;
+  const open = chatOpenNow(c) ? '1' : '0';
+  if (foot.dataset.open !== open || open === '0') { if (foot.dataset.open !== open || foot.dataset.msg !== chatClosedMsg(c)) { foot.dataset.open = open; foot.dataset.msg = chatClosedMsg(c); foot.innerHTML = chatFootHtml(c); } }
+  const act = $('#chattopact'); if (act) act.innerHTML = chatTopAct(c);
 }
 function incomingCard(o) {
   const b = o.buyer || {};
@@ -2007,14 +2121,12 @@ function conversationView() {
   const c = S.chats.find((x) => x.id === S.chatId);
   if (!c) { S.chatId = null; return chatsView(); }
   const o = otherOf(c);
-  const ord = S.myOrders.find((x) => x.id === c.id) || S.orders.find((x) => x.id === c.id);
-  const canCancel = !!(ord && ord.status === 'aceite');
   return '<div class="chatscreen"><div class="chat-top"><button class="iconbtn" data-act="chat-back" aria-label="Voltar">' + ico('back', 22) + '</button>'
     + '<div class="ct-t"><strong>' + esc(o.name) + '</strong><small>' + esc(c.productName || '') + '</small></div>'
-    + (canCancel ? '<button class="btn sm danger" data-act="chat-cancel">Cancelar pedido</button>' : '')
+    + '<span id="chattopact">' + chatTopAct(c) + '</span>'
     + '<button class="iconbtn" data-act="report-chat" aria-label="Denunciar conversa">' + ico('flag', 20) + '</button></div>'
     + '<div class="chat-msgs" id="cmsgs" aria-live="polite"></div>'
-    + '<div class="chat-bar"><textarea id="cin" rows="1" maxlength="1000" placeholder="Escreve uma mensagem" aria-label="Mensagem"></textarea><button class="btn primary" data-act="chat-send" aria-label="Enviar">' + ico('send', 20) + '</button></div></div>';
+    + '<div id="chatfoot" data-open="' + (chatOpenNow(c) ? '1' : '0') + '" data-msg="' + esc(chatClosedMsg(c)) + '">' + chatFootHtml(c) + '</div></div>';
 }
 function myOrderCard(o) {
   const st = { novo: ['warn', 'À espera do vendedor'], aceite: ['info', 'Aceite'], entregue: ['ok', 'Entregue'], recusado: ['bad', 'Recusado'], cancelado: ['bad', 'Cancelado'] }[o.status] || ['', esc(o.status || '')];
@@ -2083,12 +2195,13 @@ function sendMsg() {
   const c = S.chats.find((x) => x.id === S.chatId);
   const text = el ? (el.value || '').trim().slice(0, 1000) : '';
   if (!c || !text) return;
+  if (!chatOpenNow(c)) { toast('Esta conversa está encerrada.'); syncChatFoot(); return; }
   const now = new Date().toISOString();
   const batch = writeBatch(db);
   batch.set(doc(collection(db, 'chats', c.id, 'messages')), { from: myId(), text, at: now });
   batch.update(doc(db, 'chats', c.id), { lastMsg: text.slice(0, 80), lastAt: now, lastFrom: myId(), ['reads.' + myId()]: now });
   el.value = ''; el.style.height = '';
-  batch.commit().catch((e) => { console.error(e); toast(errMsg(e), 5000); if ($('#cin') && !$('#cin').value) $('#cin').value = text; });
+  batch.commit().then(() => notifyChat(c.id)).catch((e) => { console.error(e); toast(errMsg(e), 5000); if ($('#cin') && !$('#cin').value) $('#cin').value = text; syncChatFoot(); });
 }
 
 function openReport(ctx) {
@@ -2441,6 +2554,7 @@ function render(keep) {
   paintDraft();
   reveal(!!keep);
   maybeTermsGate();
+  setTimeout(maybePushPrompt, 3500);
   if (!keep) window.scrollTo(0, 0);
 }
 /* Re-desenha sem perder o scroll nem o que a pessoa já escreveu */
@@ -2596,8 +2710,8 @@ Object.assign(ACT, {
   'order-decline': (b, id) => ask('Recusar pedido?', 'O comprador vê que o pedido foi recusado.', 'confirm-decline', id, 'Recusar pedido'),
   'confirm-decline': async (b, id) => { await updateDoc(doc(db, 'orders', id), { status: 'recusado', declinedAt: new Date().toISOString() }); notifyStatus(id); closeDlg(); toast('Pedido recusado'); },
   'my-cancel': (b, id) => ask('Cancelar o pedido?', 'O vendedor ainda não respondeu. Podes cancelar sem problema.', 'confirm-my-cancel', id, 'Cancelar pedido'),
-  'confirm-my-cancel': async (b, id) => { await updateDoc(doc(db, 'orders', id), { status: 'cancelado', cancelledAt: new Date().toISOString() }); closeDlg(); toast('Pedido cancelado'); },
-  'chat-cancel': () => ask('Cancelar este pedido?', 'O pedido fica cancelado e a outra pessoa é avisada no chat. Não pode ser desfeito.', 'confirm-chat-cancel', S.chatId, 'Cancelar pedido'),
+  'confirm-my-cancel': async (b, id) => { await updateDoc(doc(db, 'orders', id), { status: 'cancelado', cancelledAt: new Date().toISOString() }); notifyStatus(id); closeDlg(); toast('Pedido cancelado'); },
+  'chat-cancel': () => ask('Cancelar este pedido?', 'O pedido fica cancelado, a conversa é encerrada e a outra pessoa é avisada. Não pode ser desfeito.', 'confirm-chat-cancel', S.chatId, 'Cancelar pedido'),
   'confirm-chat-cancel': async (b, id) => { const ok = await cancelFromChat(id); closeDlg(); if (ok) toast('Pedido cancelado'); },
   'go-orders': () => { S.tab = 'pedidos'; go('sell'); }
 });
@@ -2612,6 +2726,9 @@ Object.assign(ACT, {
   'notif-read': (b, id) => markNotif(id),
   'notif-all': () => markAllNotifs(),
   'enable-push': () => enablePush(),
+  'push-test': () => pushTest(),
+  'push-later': () => { try { localStorage.setItem('gs_push_dis', String(Date.now())); } catch (e) { /* ok */ } const pp = document.getElementById('pushprompt'); if (pp) pp.remove(); },
+  'install-app': () => { if (installEvt) { installEvt.prompt(); installEvt = null; closeDlg(); } },
   'notif-open': async (b, id) => { await markNotif(id).catch(() => {}); S.tab = 'pedidos'; go('sell'); },
   'terms-accept': async () => {
     if (!$('#tc-ok') || !$('#tc-ok').checked) { const e = $('#tc-err'); if (e) e.textContent = 'Marca a caixa para aceitar.'; return; }
@@ -2712,6 +2829,7 @@ $('#dlg').addEventListener('close', () => { S.notifOpen = false; });
 /* arranque */
 S.view = viewFromPath();
 try {
+  if (new URLSearchParams(location.search).get('abrir') === 'chat') { S.view = 'chats'; window.__pendChat = (new URLSearchParams(location.search).get('id') || '').replace(/[^\w-]/g, '').slice(0, 64); history.replaceState({}, '', '/'); }
   if (new URLSearchParams(location.search).get('abrir') === 'compras') { S.view = 'chats'; history.replaceState({}, '', '/'); }
   if (new URLSearchParams(location.search).get('abrir') === 'pedidos') { S.view = 'sell'; S.tab = 'pedidos'; sessionStorage.setItem('gs_after_login', 'sell'); sessionStorage.setItem('gs_after_tab', 'pedidos'); history.replaceState({}, '', '/'); }
 } catch (e) { /* ignora */ }
